@@ -1,74 +1,44 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+#!/usr/bin/python
+# -*- coding: utf-8  -*-
+""" Bot to scrape a list of EasyChair submissions and upload them to a wiki """
+#
+# (C) Federico Leva, 2016
+#
+# Distributed under the terms of the MIT license.
+#
+__version__ = '0.1.0'
 
-
-import getpass
-import json
-import os
+import requests
+from lxml import html
 import re
-import scrapy
-from scrapy.crawler import CrawlerProcess
-from scrapy.http import Request, FormRequest
-from scrapy.linkextractors import LinkExtractor
-from scrapy.selector import Selector
+import json
+import configparser
 
-username = raw_input("easychair username:")
-password = getpass.getpass()
+config = configparser.ConfigParser()
+config.read('settings.ini')
 
-try:
-  outputfile = open('papers.json','w')
-except IOError:
-  print "something went wrong opening papers.json to dump paper data structure"
+cj = requests.cookies.cookiejar_from_dict(json.loads(config['settings']['cookie']))
+headers = {"User-Agent": "Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:42.0) Gecko/20100101 Firefox/42.0" }
+index = requests.get("https://easychair.org/conferences/submissions?a=" + config['settings']['conference_id'], cookies=cj, headers=headers)
+indexdata = html.fromstring(index.text)
+urls = indexdata.xpath('//a[contains(@href,"submission_view")]/@href')
+export = open("easychair-submissions.json", "w+", encoding='utf-8')
+papers = []
 
-assert username
-assert password
-assert outputfile
+for url in urls:
+	sub = html.fromstring(requests.get("https://easychair.org/" + url, cookies=cj, headers=headers).text)
+	thispaper = {}
+	thispaper['number'] = re.findall("[0-9]+", sub.xpath('//div[@class="pagetitle"]/text()')[0])[0]
+	thispaper['title'] = sub.xpath('//td[text()="Title:"]/../td[2]/text()')[0].strip()
+	# thispaper['names'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[1]/text()')
+	# thispaper['surnames'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[2]/text()')
+	# thispaper['emails'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[3]/text()')
+	# thispaper['countries'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[4]/text()')
+	thispaper["abstract"] = sub.xpath('//td[text()="Abstract:"]/../td[2]/text()')
+	thispaper["decision"] = sub.xpath('//td[text()="Decision:"]/../td[2]/b/text()')
+	thispaper['keywords'] = sub.xpath('//div[parent::td[@class="value"]]/text()')
+	papers.append(thispaper)
 
-class EasyChairReviews(scrapy.Spider):
-  name = 'easychair'
-  start_urls = ['https://www.easychair.org/account/signin.cgi']
+export.write(json.dumps(papers))
 
-  def parse(self,response):
-    return [FormRequest.from_response(response,
-      formdata={'name':username,'password':password},
-        callback=self.after_login)]
-
-  def after_login(self, response):
-    '''
-    load the paper bidding page, hard coded because javascript
-    '''
-    return Request(url="https://www.easychair.org/conferences/selection.cgi?a=9559460",callback=self.parse_bidpage)
-
-  def parse_bidpage(self,response):
-    allowed_links = re.compile(r".*submission_info_show.*")
-    le = LinkExtractor(allow=allowed_links)
-    links = le.extract_links(response)
-    for link in links:
-      yield Request(url=link.url,callback=self.parse_paper_page)
-    return 
-
-  def parse_paper_page(self,response):
-    results = response.xpath('//*[@id="ec:table1"]//tr')
-    thispaper = {}
-    for row in results:
-      subdoc = row.extract()
-      xp = Selector(text=subdoc)
-      elements = xp.xpath('//td//text()').extract()
-      if elements[0].find('Paper') == 0:
-        thispaper['number'] = elements[0]
-      elif elements[0].find('Title') == 0:
-        thispaper['title'] = ' '.join(elements[1:])
-      # "author keywords"
-      elif elements[0].find('Author') == 0:
-        thispaper['keywords'] = elements[2:]
-      elif elements[0].find('Abstract') == 0:
-        thispaper['abstract'] = ' '.join(elements[1:])
-    outputfile.write(json.dumps(thispaper) + '\n')
-    # hurr i don't know how to call a cleanup fn in scrapy
-    outputfile.flush()
-    os.fsync(outputfile)
-
-process = CrawlerProcess()
-
-process.crawl(EasyChairReviews)
-process.start()
+export.close()
