@@ -1,0 +1,3 @@
+[settings]
+cookie=auth_cookie_as_json
+conference_id=8_digit_conference_id
