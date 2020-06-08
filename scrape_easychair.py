@@ -26,18 +26,24 @@ export = open("easychair-submissions.json", "w+", encoding='utf-8')
 papers = []
 
 for url in urls:
-	sub = html.fromstring(requests.get("https://easychair.org/" + url, cookies=cj, headers=headers).text)
-	thispaper = {}
-	thispaper['number'] = re.findall("[0-9]+", sub.xpath('//div[@class="pagetitle"]/text()')[0])[0]
-	thispaper['title'] = sub.xpath('//td[text()="Title:"]/../td[2]/text()')[0].strip()
-	# thispaper['names'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[1]/text()')
-	# thispaper['surnames'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[2]/text()')
-	# thispaper['emails'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[3]/text()')
-	# thispaper['countries'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[4]/text()')
-	thispaper["abstract"] = sub.xpath('//td[text()="Abstract:"]/../td[2]/text()')
-	thispaper["decision"] = sub.xpath('//td[text()="Decision:"]/../td[2]/b/text()')
-	thispaper['keywords'] = sub.xpath('//div[parent::td[@class="value"]]/text()')
-	papers.append(thispaper)
+    sub = html.fromstring(requests.get("https://easychair.org/" + url, cookies=cj, headers=headers).text)
+    thispaper = {}
+    decision = sub.xpath('//td[text()="Decision:"]/../td[2]/b/text()')
+    if len(decision) > 0:
+        thispaper["decision"] = decision[0]
+    else:
+        continue
+
+    if 'reject' in thispaper["decision"].lower():
+        thispaper['number'] = re.findall("[0-9]+", sub.xpath('//div[@class="pagetitle"]/text()')[0])[0]
+        thispaper['title'] = sub.xpath('//td[text()="Title:"]/../td[2]/text()')[0].strip()
+        # thispaper['names'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[1]/text()')
+        # thispaper['surnames'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[2]/text()')
+        thispaper['emails'] = ';'.join(sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[3]/text()'))
+        # thispaper['countries'] = sub.xpath('//b[text()="Authors"]/../../..//tr[position()>2]/td[4]/text()')
+        #thispaper["abstract"] = sub.xpath('//td[text()="Abstract:"]/../td[2]/text()')
+        thispaper['keywords'] = sub.xpath('//div[parent::td[@class="value"]]/text()')
+        papers.append(thispaper)
 
 export.write(json.dumps(papers))
 
